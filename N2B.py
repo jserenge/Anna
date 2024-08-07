@@ -3,20 +3,7 @@ import pandas as pd
 import pickle
 from datetime import datetime
 from io import BytesIO
-import numpy as np
-import xlsxwriter
 
-# Load the saved models and scaler
-with open('N2B_model_pred.pkl', 'rb') as f:
-    model_pred = pickle.load(f)
-with open('N2B_model_lower.pkl', 'rb') as f:
-    model_lower = pickle.load(f)
-with open('N2B_model_upper.pkl', 'rb') as f:
-    model_upper = pickle.load(f)
-with open('N2B_scaler.pkl', 'rb') as f:
-    scaler = pickle.load(f)
-
-# Function to create features
 def create_features(date):
     """Create time series features based on the date."""
     features = {
@@ -25,61 +12,73 @@ def create_features(date):
         'Year': date.year,
         'is_weekend': int(date.weekday() in [5, 6])
     }
-    # Use placeholders for lag features
-    for i in range(1, 4):
-        features[f'S_lag_{i}'] = np.nan  # Placeholder values
+    
+    # Dummy lag features for the purpose of matching model input
+    # These values should ideally come from historical data
+    features['S_lag_1'] = 0  # Placeholder value
+    features['S_lag_2'] = 0  # Placeholder value
+    features['S_lag_3'] = 0  # Placeholder value
+
     return features
 
-# Function to make predictions for a given date
-def predict_for_date(date, scaler, model_lower, model_pred, model_upper):
-    features = create_features(date)
-    
-    # Convert to DataFrame with the correct feature order
-    feature_names = ['Year', 'month', 'day_of_week', 'is_weekend'] + [f'S_lag_{i}' for i in range(1, 4)]
-    input_df = pd.DataFrame([features], columns=feature_names)
-    
-    # Scale the features
-    input_scaled = scaler.transform(input_df)
-    
-    # Make predictions
-    lower_pred = model_lower.predict(input_scaled)[0]
-    pred = model_pred.predict(input_scaled)[0]
-    upper_pred = model_upper.predict(input_scaled)[0]
-
-    return lower_pred, pred, upper_pred
-
-# Function to convert DataFrame to Excel
-def to_excel(df):
-    output = BytesIO()
-    writer = pd.ExcelWriter(output, engine='xlsxwriter')
-    df.to_excel(writer, index=False, sheet_name='Predictions')
-    writer.close()  # Use close instead of save
-    processed_data = output.getvalue()
-    return processed_data
-
-# Streamlit app
 def app():
-    st.title('N2B Prediction')
+    # Load the models and scaler
+    with open('N2B_model_pred.pkl', 'rb') as f:
+        model_pred = pickle.load(f)
+    with open('N2B_model_lower.pkl', 'rb') as f:
+        model_lower = pickle.load(f)
+    with open('N2B_model_upper.pkl', 'rb') as f:
+        model_upper = pickle.load(f)
+    with open('N2B_scaler.pkl', 'rb') as f:
+        scaler = pickle.load(f)
 
-    date_input = st.date_input('Select a date', value=datetime.today())
-    
-    if st.button('Predict'):
+    # Create a Streamlit app
+    st.title('Prediction App For S')
+
+    # Add explanation
+    st.write('This app predicts S based on a given date. Please select a date below.')
+
+    # Date input
+    selected_date = st.date_input("Select a date")
+
+    # Create a button to trigger the prediction
+    if st.button('Make Prediction'):
         try:
-            # Predict value
-            lower, pred, upper = predict_for_date(date_input, scaler, model_lower, model_pred, model_upper)
+            # Create features
+            features = create_features(selected_date)
+
+            # Convert to DataFrame
+            input_data = pd.DataFrame([features])
+
+            # Scale the input data
+            input_scaled = scaler.transform(input_data)
+
+            # Make predictions
+            lower_pred = model_lower.predict(input_scaled)[0]
+            pred = model_pred.predict(input_scaled)[0]
+            upper_pred = model_upper.predict(input_scaled)[0]
 
             # Display the predicted values
             st.subheader('Predicted S:')
-            st.write(f"Lower bound (0.5%): {lower:.2f}")
+            st.write(f"Lower bound (0.5%): {lower_pred:.2f}")
             st.write(f"Predicted S: {pred:.2f}")
-            st.write(f"Upper bound (99.5%): {upper:.2f}")
+            st.write(f"Upper bound (99.5%): {upper_pred:.2f}")
 
             # Prepare predictions for download
             predictions_df = pd.DataFrame({
-                'Lower Bound': [lower],
+                'Lower': [lower_pred],
                 'Predicted': [pred],
-                'Upper Bound': [upper]
+                'Upper': [upper_pred]
             })
+
+            # Function to convert DataFrame to Excel
+            def to_excel(df):
+                output = BytesIO()
+                writer = pd.ExcelWriter(output, engine='xlsxwriter')
+                df.to_excel(writer, index=False, sheet_name='Predictions')
+                writer.close()  # Use close instead of save
+                processed_data = output.getvalue()
+                return processed_data
 
             # Convert predictions to Excel
             excel_data = to_excel(predictions_df)

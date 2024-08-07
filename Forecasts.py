@@ -5,7 +5,8 @@ from datetime import datetime
 
 def create_date_features(df):
     """Create date features from the date column."""
-    df['Date'] = pd.to_datetime(df['Date'])
+    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+    df.dropna(subset=['Date'], inplace=True)  # Drop rows where Date conversion failed
     df['Year'] = df['Date'].dt.year
     df['Month'] = df['Date'].dt.month
     df['Day'] = df['Date'].dt.day
@@ -16,6 +17,10 @@ def fit_and_predict(df, selected_feature, num_days):
     """Fit a SARIMAX model and make forecasts."""
     df = df.rename(columns={'Date': 'ds', selected_feature: 'y'})
     
+    # Ensure the 'y' column is numeric
+    df['y'] = pd.to_numeric(df['y'], errors='coerce')
+    df.dropna(subset=['y'], inplace=True)  # Drop rows where 'y' conversion failed
+    
     # Fit the SARIMAX model
     model = SARIMAX(df['y'], 
                     order=(1, 1, 1),  # Change these orders as necessary
@@ -23,7 +28,7 @@ def fit_and_predict(df, selected_feature, num_days):
     model_fit = model.fit(disp=False)
     
     # Generate future dates
-    future_dates = pd.date_range(start=df['ds'].max(), periods=num_days + 1, closed='right')
+    future_dates = pd.date_range(start=df['ds'].max(), periods=num_days + 1, inclusive='right')
     
     # Forecast
     forecast = model_fit.get_forecast(steps=num_days)
@@ -35,6 +40,27 @@ def fit_and_predict(df, selected_feature, num_days):
 
 def app():
     st.title('Forecasts App with SARIMAX')
+
+    # About section
+    st.sidebar.header('About')
+    st.sidebar.write("""
+    This application uses the SARIMAX model to forecast future values based on historical data. Here's how it works:
+    
+    1. **Upload Your Data**: Upload an Excel file containing your historical data. The file should have a column with date information and at least one column with the values you want to forecast.
+    
+    2. **Create Date Features**: The app will automatically create date-related features from the date column, such as year, month, day, and day of the week.
+    
+    3. **Select the Feature to Forecast**: Choose which column of your data you want to use for forecasting. This column should contain the values you wish to predict.
+    
+    4. **Specify Forecast Settings**: Enter the number of days you want to forecast into the future. The app will generate forecasts for this period.
+    
+    5. **View and Download Forecast Results**: The app will display the forecast results, including the predicted values and their confidence intervals. You can also download the results in Excel format.
+    
+    **Model Details**:
+    - The SARIMAX model is used to capture seasonality and trend in the data.
+    - The model parameters may be adjusted based on the characteristics of your data.
+    """)
+    
     st.write('Upload your data and specify the forecast settings below.')
 
     # File upload
@@ -67,7 +93,7 @@ def app():
                         st.dataframe(forecast_df)
 
                     except Exception as e:
-                        st.error(f"An error occurred: {e}")
+                        st.error(f"An error occurred during forecasting: {e}")
 
         except Exception as e:
             st.error(f"An error occurred while reading the file: {e}")
